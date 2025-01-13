@@ -14,6 +14,8 @@ const EmployeeData = require("../DB_Models/db.js")
 const juryData = require("../DB_Models/jury.js")
 const nominateData=require("../DB_Models/nominate.js")
 const GoogleProfile=require("../DB_Models/GoogleProfile.js")
+const wrapAsync = require("../utils/wrapAsync.js");
+const ExpressError=require("../utils/ExpressError.js");
 //--------------------------------Data Parse------------------------------------
 app.use(express.json());
 app.use(express.urlencoded({extended : true}))
@@ -120,7 +122,7 @@ app.get(
     }
 );
 
-app.get("/profile", async(req, res) => {
+app.get("/profile",wrapAsync( async(req, res) => {
 
     if (!req.isAuthenticated()) {
         return res.redirect('/auth');
@@ -128,7 +130,7 @@ app.get("/profile", async(req, res) => {
       res.json(req.user); // Send the user data saved in MongoDB
 
     res.redirect("/"); // Safely access displayName
-});
+}));
 
 app.get("/logout", (req, res, next) => {
     req.logout((err) => {
@@ -144,7 +146,7 @@ app.listen(port, ()=>{
 
 //--------------------------------Routing------------------------------------
 //--------------------------------Admin Control Panel Route-------------------------------------
-app.get('/admin', isAdmin, async (req, res) => {
+app.get('/admin', isAdmin, wrapAsync(async (req, res) => {
     console.log('User:', req.user);  // Log the user object to ensure isAdmin is true
 
     const nominations = await nominateData.find();
@@ -156,7 +158,7 @@ app.get('/admin', isAdmin, async (req, res) => {
         jury,
         employees,
     });
-});
+}));
 
 // Admin can delete a nomination
 app.post('/admin/deleteNomination/:id', isAdmin, async (req, res) => {
@@ -174,12 +176,12 @@ app.post('/admin/editNomination/:id', isAdmin, async (req, res) => {
 });
 
 //---->HomePage Route 
-app.get("/", async (req, res) => {
+app.get("/", wrapAsync(async (req, res) => {
     let data = await EmployeeData.find();
     let nominate = await nominateData.find();
     let userName = req.isAuthenticated() ? req.user.displayName : null; // Get the user's name
     res.render("routes/home.ejs", { data, nominate, userName });
-});
+}));
 //----> Vote Route
 app.post('/vote/:_id', isAuthenticated, async (req, res) => {
     try {
@@ -197,8 +199,8 @@ app.post('/vote/:_id', isAuthenticated, async (req, res) => {
 
 
 //--------------------------------Leaderboard Route------------------------------
-app.get("/leaderboard", async (req, res) => {
-    try {
+app.get("/leaderboard", wrapAsync(async (req, res) => {
+    
         let nominate = await nominateData.find();
         const userName = req.user ? req.user.displayName : null;
         // Sort nominees by total score in descending order
@@ -222,42 +224,42 @@ app.get("/leaderboard", async (req, res) => {
         });
 
         res.render("./pages/leaderboard", { nominate, userName });
-    } catch (error) {
+     
         console.error("Error fetching leaderboard data: ", error);
         res.status(500).send("Internal Server Error");
-    }
-});
+    
+}));
 
 //----> Vote Route
-app.post("/vote/:_id", async (req, res) => {
-    try {
+app.post("/vote/:_id",wrapAsync(async (req, res) => {
+    
         let { _id } = req.params;
         let data = await nominateData.findById(_id);
         let count = ++data.votes;
         await nominateData.findByIdAndUpdate(_id, { votes: count });
 
         res.status(200).json({ success: true, votes: count });
-    } catch (error) {
+    
         console.error("Error updating votes: ", error);
         res.status(500).json({ success: false, error: "Internal Server Error" });
-    }
-});
+    
+}));
 //---------------------------------Jury Route---------------------------------------
 
-app.get("/jury", async (req, res) => {
+app.get("/jury", wrapAsync(async (req, res) => {
     const userName = req.user ? req.user.displayName : null;
     const jury = await juryData.find();
     res.render("./pages/jury", { userName, jury });
-});
+}));
 
 
 //jury-route
-app.post("/jury/:_id",async(req,res)=>{
+app.post("/jury/:_id",wrapAsync(async(req,res)=>{
     let {_id} = req.params;
     let data = await juryData.findById(_id)
     res.redirect("/")
 
-})
+}));
 
 
 //---------------------------------Nominate Route-------------------------------------
@@ -267,7 +269,7 @@ app.get("/nominateyourself",(req,res)=>{
     res.render("./pages/nominateyourself",{userName})
 })
 
-app.post("/submitnomination",async (req,res)=>{
+app.post("/submitnomination",wrapAsync(async (req,res)=>{
     let {nominationType, fullName, email, linkedIn, phone, company, jobTitle, category, peerFullName, peerEmail, peerLinkedIn, peerPhone, peerCompany, peerJobTitle, relation} = req.body;
 
     let data = new nominateData({
@@ -290,7 +292,7 @@ app.post("/submitnomination",async (req,res)=>{
 
     data.save().then(()=>{console.log("Data Saved Successfully...");}).catch(()=>{console.log("Error Occurred");})
     res.redirect("/")
-})
+}));
 
 
 app.get("/nominatesomeoneelse",(req,res)=>{
@@ -301,8 +303,8 @@ app.get("/nominatesomeoneelse",(req,res)=>{
 
 //---------------------------Search Route-------------------------------------
 // Search API for live search functionality
-app.get('/search', async (req, res) => {
-    try {
+app.get('/search',wrapAsync( async (req, res) => {
+   
         const { query } = req.query; // Get the search term from the request
 
         // Query the database for employees whose full name matches the search term
@@ -311,13 +313,21 @@ app.get('/search', async (req, res) => {
         });
 
         res.status(200).json(results); // Return matching results as JSON
-    } catch (error) {
+  
         console.error('Error fetching search results:', error);
         res.status(500).json({ error: 'Internal Server Error' });
-    }
+   
+}));
+
+app.all("*",(req,res,next)=>{
+    next(new ExpressError(404,"Page not found !...."));
+})
+
+app.use((err, req, res, next) => {
+    let{status=500,message="something went wrong "}=err;
+    res.status(status).send(message);
+  
 });
-
-
 
 
 
